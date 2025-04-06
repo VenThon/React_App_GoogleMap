@@ -1,57 +1,126 @@
-import React, { useState } from "react";
 import { GoogleMap, LoadScript, Marker } from "@react-google-maps/api";
+import { useState, useCallback } from "react";
 
 const containerStyle = {
-  width: "80vw",
-  height: "550px",
+  width: "100%",
+  height: "500px",
 };
 
-const initialCenter = {
-  lat: 11.5564, // Phnom Penh latitude
-  lng: 104.9282, // Phnom Penh longitude
+const defaultCenter = {
+  lat: 11.5564,
+  lng: 104.9282,
 };
 
-const GoogleMapComponent: React.FC = () => {
-  const [zoom, setZoom] = useState(12);
-  const [center, setCenter] = useState(initialCenter);
-  const [userLocation, setUserLocation] = useState<google.maps.LatLngLiteral | null>(null);
+const GoogleMapComponent = () => {
+  const [map, setMap] = useState<google.maps.Map | null>(null);
+  const [userLocation, setUserLocation] = useState<{lat: number, lng: number} | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [apiLoaded, setApiLoaded] = useState(false);
 
-  const handleShowCurrentLocation = () => {
-    if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          const userLocation = {
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          };
-          setUserLocation(userLocation);
-          setCenter(userLocation); // Move the map to the user's location
-          setZoom(15); // Zoom in on the user's location
-        },
-        (error) => {
-          console.error("Geolocation error:", error);
-        }
-      );
-    } else {
-      alert("Geolocation is not supported by your browser.");
+  const getCurrentLocation = useCallback(() => {
+    setIsLoading(true);
+    setError(null);
+
+    if (!navigator.geolocation) {
+      setError("Geolocation is not supported by your browser");
+      setIsLoading(false);
+      return;
     }
-  };
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const location = {
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        };
+        setUserLocation(location);
+        
+        // Center map on user's location but keep default marker visible
+        if (map) {
+          map.panTo(location);
+          map.setZoom(15); // Zoom closer to user's location
+        }
+        
+        setIsLoading(false);
+      },
+      (error) => {
+        setIsLoading(false);
+        setError(`Error getting location: ${error.message}`);
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 10000
+      }
+    );
+  }, [map]);
 
   return (
-    <LoadScript googleMapsApiKey={process.env.REACT_APP_GOOGLE_MAPS_API_KEY || ""}>
-      <div>
-        <GoogleMap mapContainerStyle={containerStyle} center={center} zoom={zoom}>
-          {/* Show a marker at user's current location if available */}
-          {userLocation && <Marker position={userLocation} />}
-        </GoogleMap>
+    <div style={{ position: 'relative' }}>
+      <LoadScript 
+        googleMapsApiKey={process.env.REACT_APP_GOOGLE_MAPS_API_KEY || ""}
+        onLoad={() => setApiLoaded(true)}
+      >
+        {apiLoaded && (
+          <GoogleMap 
+            mapContainerStyle={containerStyle}
+            center={defaultCenter}
+            zoom={12}
+            onLoad={(map) => setMap(map)}
+            options={{
+              streetViewControl: false,
+              mapTypeControl: false,
+            }}
+          >
+            {/* Permanent default center marker */}
+            <Marker 
+              position={defaultCenter}
+              label="D"
+              title="Default Location"
+              icon={{
+                url: "https://maps.google.com/mapfiles/ms/icons/red-dot.png",
+              }}
+            />
+            
+            {/* User location marker (appears after clicking button) */}
+            {userLocation && (
+              <Marker 
+                position={userLocation}
+                label="Y"
+                title="Your Location"
+                icon={{
+                  url: "https://maps.google.com/mapfiles/ms/icons/blue-dot.png",
+                }}
+              />
+            )}
+          </GoogleMap>
+        )}
+      </LoadScript>
+
+      <div style={{ padding: "10px" }}>
         <button
-          onClick={handleShowCurrentLocation}
-          style={{ marginTop: "10px", padding: "10px", cursor: "pointer" }}
+          onClick={getCurrentLocation}
+          disabled={isLoading}
+          style={{ 
+            padding: "10px 20px",
+            backgroundColor: isLoading ? "#ccc" : "#007bff",
+            color: "white",
+            border: "none",
+            borderRadius: "4px",
+            cursor: "pointer",
+            margin: "10px 0"
+          }}
         >
-          I am here
+          {isLoading ? "Locating..." : "Show My Location"}
         </button>
+        
+        {error && (
+          <div style={{ color: "red" }}>
+            {error}
+          </div>
+        )}
       </div>
-    </LoadScript>
+    </div>
   );
 };
 
